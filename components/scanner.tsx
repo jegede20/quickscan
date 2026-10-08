@@ -183,6 +183,8 @@ export function Scanner({
   const decoderRef = useRef<Decoder | null>(null);
   const intervalRef = useRef<number | null>(null);
   const busyRef = useRef(false);
+  const chainRef = useRef<Promise<void>>(Promise.resolve());
+  const searchQueuedRef = useRef(false);
   const targetsRef = useRef<Map<string, Target>>(new Map());
   const autoOpenedRef = useRef<Set<string>>(new Set());
   const autoOpenRef = useRef(autoOpen);
@@ -202,6 +204,16 @@ export function Scanner({
   const decoder = useCallback((): Decoder => {
     if (!decoderRef.current) decoderRef.current = createDecoder();
     return decoderRef.current;
+  }, []);
+
+  /** Run a decode on the shared canvas without overlapping others. */
+  const runDecode = useCallback(<T,>(job: () => Promise<T>): Promise<T> => {
+    const p = chainRef.current.then(() => job());
+    chainRef.current = p.then(
+      () => undefined,
+      () => undefined
+    );
+    return p;
   }, []);
 
   const stopLoop = useCallback(() => {
@@ -232,60 +244,62 @@ export function Scanner({
       return;
     busyRef.current = true;
     try {
-      const out = await decoder().detect(video);
-      const rect = container.getBoundingClientRect();
-      const frame = frameBox({ w: rect.width, h: rect.height });
-      const now = performance.now();
-      const map = targetsRef.current;
-      const prevSize = map.size;
-      const seen = new Set<string>();
+      await runDecode(async () => {
+        const out = await decoder().detect(video);
+        const rect = container.getBoundingClientRect();
+        const frame = frameBox({ w: rect.width, h: rect.height });
+        const now = performance.now();
+        const map = targetsRef.current;
+        const prevSize = map.size;
+        const seen = new Set<string>();
 
-      for (const hit of out.hits) {
-        const corners = hit.corners.map((p) =>
-          mapToDisplay(p, out.width, out.height, rect.width, rect.height)
-        );
-        // Only codes aligned with the fixed center frame are scanned.
-        if (frame && !isInFrame(corners, frame)) continue;
-        const key = `${hit.format}|${hit.value}`;
-        seen.add(key);
-        const existing = map.get(key);
-        map.set(key, {
-          key,
-          item: {
-            value: hit.value,
-            format: hit.format,
-            type: classify(hit.value, hit.format),
-          },
-          corners: lerpCorners(existing?.corners, corners),
-          firstSeen: existing?.firstSeen ?? now,
-          lastSeen: now,
-        });
-      }
-
-      for (const [key, t] of map) {
-        if (!seen.has(key) && now - t.lastSeen > STALE_MS) map.delete(key);
-      }
-
-      if (map.size > 0 || prevSize > 0) setTargets([...map.values()]);
-
-      if (autoOpenRef.current) {
-        for (const t of map.values()) {
-          if (t.item.type !== "url") continue;
-          if (autoOpenedRef.current.has(t.key)) continue;
-          if (now - t.firstSeen < 1200) continue; // must be stable first
-          autoOpenedRef.current.add(t.key);
-          onAutoOpenRef.current({
-            ...t.item,
-            corners: t.corners,
+        for (const hit of out.hits) {
+          const corners = hit.corners.map((p) =>
+            mapToDisplay(p, out.width, out.height, rect.width, rect.height)
+          );
+          // Only codes aligned with the fixed center frame are scanned.
+          if (frame && !isInFrame(corners, frame)) continue;
+          const key = `${hit.format}|${hit.value}`;
+          seen.add(key);
+          const existing = map.get(key);
+          map.set(key, {
+            key,
+            item: {
+              value: hit.value,
+              format: hit.format,
+              type: classify(hit.value, hit.format),
+            },
+            corners: lerpCorners(existing?.corners, corners),
+            firstSeen: existing?.firstSeen ?? now,
+            lastSeen: now,
           });
         }
-      }
+
+        for (const [key, t] of map) {
+          if (!seen.has(key) && now - t.lastSeen > STALE_MS) map.delete(key);
+        }
+
+        if (map.size > 0 || prevSize > 0) setTargets([...map.values()]);
+
+        if (autoOpenRef.current) {
+          for (const t of map.values()) {
+            if (t.item.type !== "url") continue;
+            if (autoOpenedRef.current.has(t.key)) continue;
+            if (now - t.firstSeen < 1200) continue; // must be stable first
+            autoOpenedRef.current.add(t.key);
+            onAutoOpenRef.current({
+              ...t.item,
+              corners: t.corners,
+            });
+          }
+        }
+      });
     } catch {
       // Transient decode failures are fine; the next tick retries.
     } finally {
       busyRef.current = false;
     }
-  }, [decoder]);
+  }, [decoder, runDecode]);
 
   const startLoop = useCallback(() => {
     stopLoop();
@@ -424,39 +438,42 @@ export function Scanner({
   );
 
   // Search button: decode what is in the frame and open its result directly.
+  // Always queues behind any in-flight decode — a tap is never dropped.
   const searchFrame = useCallback(async () => {
     const video = videoRef.current;
     const container = containerRef.current;
-    if (busyRef.current || !video || !container) return;
+    if (searchQueuedRef.current || !video || !container) return;
     if (video.readyState < 2 || !video.videoWidth) return;
-    busyRef.current = true;
+    searchQueuedRef.current = true;
     try {
-      const out = await decoder().detect(video);
-      const rect = container.getBoundingClientRect();
-      const frame = frameBox({ w: rect.width, h: rect.height });
-      const hit = out.hits.find((h) => {
-        const corners = h.corners.map((p) =>
-          mapToDisplay(p, out.width, out.height, rect.width, rect.height)
-        );
-        return !frame || isInFrame(corners, frame);
-      });
-      if (hit) {
-        setHint(null);
-        onSearchRef.current({
-          value: hit.value,
-          format: hit.format,
-          type: classify(hit.value, hit.format),
-          corners: hit.corners,
+      await runDecode(async () => {
+        const out = await decoder().detect(video);
+        const rect = container.getBoundingClientRect();
+        const frame = frameBox({ w: rect.width, h: rect.height });
+        const hit = out.hits.find((h) => {
+          const corners = h.corners.map((p) =>
+            mapToDisplay(p, out.width, out.height, rect.width, rect.height)
+          );
+          return !frame || isInFrame(corners, frame);
         });
-      } else {
-        setHint("No code found in this frame");
-      }
+        if (hit) {
+          setHint(null);
+          onSearchRef.current({
+            value: hit.value,
+            format: hit.format,
+            type: classify(hit.value, hit.format),
+            corners: hit.corners,
+          });
+        } else {
+          setHint("No code found in this frame");
+        }
+      });
     } catch {
       setHint("Could not search that frame");
     } finally {
-      busyRef.current = false;
+      searchQueuedRef.current = false;
     }
-  }, [decoder]);
+  }, [decoder, runDecode]);
 
   const live = camState === "live";
   const frame = frameBox(size);
@@ -598,7 +615,7 @@ export function Scanner({
 
       {/* Bottom: hint + search button */}
       <div
-        className={`absolute inset-x-0 bottom-0 z-40 flex flex-col items-center gap-3 pb-[calc(64px+env(safe-area-inset-bottom))] transition-opacity duration-200 motion-reduce:transition-none ${
+        className={`absolute inset-x-0 bottom-0 z-40 flex flex-col items-center gap-3 pb-[calc(88px+env(safe-area-inset-bottom))] transition-opacity duration-200 motion-reduce:transition-none ${
           hint || live ? "opacity-100" : "opacity-0"
         } ${live ? "" : "pointer-events-none"}`}
       >
@@ -613,7 +630,7 @@ export function Scanner({
             type="button"
             onClick={() => void searchFrame()}
             aria-label="Search the code in the frame"
-            className="flex h-[68px] w-[68px] items-center justify-center rounded-full border-2 border-white/80 bg-accent"
+            className="flex h-[68px] w-[68px] touch-manipulation items-center justify-center rounded-full border-2 border-white/80 bg-accent transition-transform duration-100 active:scale-95 motion-reduce:transition-none"
           >
             <span className="flex h-[54px] w-[54px] items-center justify-center rounded-full bg-white/15">
               <Search className="h-6 w-6 text-white" strokeWidth={1.5} />
