@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ── Brand palette ─────────────────────────────────────────── */
+:root {
+  --qs-bg: #e9eee9;
+  --qs-surface: #ffffff;
+  --qs-border: #d9dfd9;
+  --qs-ink: #111111;
+  --qs-muted: #66706a;
+  --qs-grid: rgba(36, 74, 58, 0.1);
+}
+
+.dark {
+  --qs-bg: #0c1110;
+  --qs-surface: #1a1d1c;
+  --qs-border: #2a2f2d;
+  --qs-ink: #f4f6f3;
+  --qs-muted: #98a29c;
+  --qs-grid: rgba(190, 235, 215, 0.07);
+}
+
+@theme inline {
+  --color-bg: var(--qs-bg);
+  --color-surface: var(--qs-surface);
+  --color-border: var(--qs-border);
+  --color-ink: var(--qs-ink);
+  --color-muted: var(--qs-muted);
+  --color-accent: #ff5a1f;
+  --color-success: #1f9d55;
+  --color-error: #d92d20;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, "SFMono-Regular", monospace;
+
+  /* Type scale: 12 / 14 / 16 / 20 / 28 / 36 */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.125rem;
+  --text-3xl: 2.25rem;
+  --text-3xl--line-height: 2.5rem;
+
+  --radius-card: 16px;
+  --radius-ctl: 12px;
+
+  --animate-qs-scan: qs-scan 2.2s ease-in-out infinite;
+  --animate-qs-pop: qs-pop 160ms ease-out;
+  --animate-qs-sheet: qs-sheet 220ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes qs-scan {
+  0%,
+  100% {
+    top: 8%;
+    opacity: 0.25;
+  }
+  50% {
+    top: 88%;
+    opacity: 1;
+  }
+}
+
+@keyframes qs-pop {
+  from {
+    transform: scale(0.92);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes qs-sheet {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* ── Base ──────────────────────────────────────────────────── */
+body {
+  background-color: var(--qs-bg);
+  /* Fine 1px grid every 32px */
+  background-image:
+    linear-gradient(to right, var(--qs-grid) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--qs-grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: -1px -1px;
+  color: var(--qs-ink);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* No scan-line animation or chip pop when the user prefers reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .qs-scanline {
+    display: none;
+  }
+}
