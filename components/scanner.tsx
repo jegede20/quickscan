@@ -4,10 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowUpRight,
-  Camera,
   ImagePlus,
   Link2,
   Package,
+  Search,
   ShieldCheck,
   Type,
   UserRound,
@@ -18,6 +18,7 @@ import { createDecoder, type Decoder } from "@/lib/decode";
 import { analyzeLink, classify, TYPE_LABELS } from "@/lib/parse";
 import type { Point, ResultType, ScanItem, ScanResult } from "@/lib/types";
 import { LogoMark } from "@/components/logo";
+import { LinkIcon } from "@/components/link-icon";
 
 type CamState =
   | "idle"
@@ -159,13 +160,13 @@ export function Scanner({
   onChipTap,
   onAutoOpen,
   onImageResult,
-  onCapture,
+  onSearch,
   autoOpen,
 }: {
   onChipTap: (result: ScanResult) => void;
   onAutoOpen: (result: ScanResult) => void;
   onImageResult: (result: ScanResult | null) => void;
-  onCapture: (result: ScanResult | null) => void;
+  onSearch: (result: ScanResult | null) => void;
   autoOpen: boolean;
 }) {
   const [camState, setCamState] = useState<CamState>("idle");
@@ -187,16 +188,16 @@ export function Scanner({
   const autoOpenRef = useRef(autoOpen);
   const onAutoOpenRef = useRef(onAutoOpen);
   const onImageResultRef = useRef(onImageResult);
-  const onCaptureRef = useRef(onCapture);
+  const onSearchRef = useRef(onSearch);
   const onChipTapRef = useRef(onChipTap);
 
   useEffect(() => {
     autoOpenRef.current = autoOpen;
     onAutoOpenRef.current = onAutoOpen;
     onImageResultRef.current = onImageResult;
-    onCaptureRef.current = onCapture;
+    onSearchRef.current = onSearch;
     onChipTapRef.current = onChipTap;
-  }, [autoOpen, onAutoOpen, onImageResult, onCapture, onChipTap]);
+  }, [autoOpen, onAutoOpen, onImageResult, onSearch, onChipTap]);
 
   const decoder = useCallback((): Decoder => {
     if (!decoderRef.current) decoderRef.current = createDecoder();
@@ -422,8 +423,8 @@ export function Scanner({
     []
   );
 
-  // Shutter: decode the current frame and open its result directly.
-  const captureFrame = useCallback(async () => {
+  // Search button: decode what is in the frame and open its result directly.
+  const searchFrame = useCallback(async () => {
     const video = videoRef.current;
     const container = containerRef.current;
     if (busyRef.current || !video || !container) return;
@@ -441,7 +442,7 @@ export function Scanner({
       });
       if (hit) {
         setHint(null);
-        onCaptureRef.current({
+        onSearchRef.current({
           value: hit.value,
           format: hit.format,
           type: classify(hit.value, hit.format),
@@ -451,7 +452,7 @@ export function Scanner({
         setHint("No code found in this frame");
       }
     } catch {
-      setHint("Could not capture that frame");
+      setHint("Could not search that frame");
     } finally {
       busyRef.current = false;
     }
@@ -473,7 +474,7 @@ export function Scanner({
         className="absolute inset-0 h-full w-full object-cover"
       />
 
-      {/* Fixed center viewfinder brackets — the frame stays put, the phone moves */}
+      {/* Fixed center viewfinder + code-shape brackets that map a detected code */}
       {live && frame && (
         <svg
           className="pointer-events-none absolute inset-0 z-10 h-full w-full text-white [filter:drop-shadow(0_1px_2px_rgba(0,0,0,0.55))]"
@@ -487,6 +488,9 @@ export function Scanner({
               { x: frame.x, y: frame.y + frame.side },
             ]}
           />
+          {targets.map((t) => (
+            <BracketPath key={t.key} corners={t.corners} width={3.5} />
+          ))}
         </svg>
       )}
 
@@ -527,7 +531,14 @@ export function Scanner({
               className="motion-safe:animate-qs-pop pointer-events-auto absolute flex h-16 items-center gap-2.5 rounded-full border border-border bg-surface px-2.5 text-left transition-[left,top] duration-150 ease-out motion-reduce:transition-none"
               style={{ left: spot.left, top: spot.top, width: CHIP_W }}
             >
-              <Icon className="h-[18px] w-[18px] shrink-0 text-muted" strokeWidth={1.5} />
+              {link ? (
+                <LinkIcon href={link.href} size={26} className="shrink-0" />
+              ) : (
+                <Icon
+                  className="h-[18px] w-[18px] shrink-0 text-muted"
+                  strokeWidth={1.5}
+                />
+              )}
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-1 text-xs">
                   {link ? (
@@ -585,11 +596,32 @@ export function Scanner({
         </button>
       </div>
 
-      {/* Bottom: hint + capture shutter */}
+      {/* Search button: sits between the frame and the tab bar */}
+      {live && (
+        <button
+          type="button"
+          onClick={() => void searchFrame()}
+          aria-label="Search the code in the frame"
+          className={`absolute left-1/2 z-40 flex h-[68px] w-[68px] -translate-x-1/2 items-center justify-center rounded-full border-2 border-white/80 bg-accent ${
+            frame ? "" : "bottom-[calc(64px+env(safe-area-inset-bottom))]"
+          }`}
+          style={
+            frame
+              ? { top: frame.y + frame.side + 20 }
+              : undefined
+          }
+        >
+          <span className="flex h-[54px] w-[54px] items-center justify-center rounded-full bg-white/15">
+            <Search className="h-6 w-6 text-white" strokeWidth={1.5} />
+          </span>
+        </button>
+      )}
+
+      {/* Bottom hint */}
       <div
-        className={`absolute inset-x-0 bottom-0 z-40 flex flex-col items-center gap-3 pb-[calc(64px+env(safe-area-inset-bottom))] transition-opacity duration-200 motion-reduce:transition-none ${
+        className={`absolute inset-x-0 bottom-0 z-40 flex justify-center pb-[calc(18px+env(safe-area-inset-bottom))] transition-opacity duration-200 motion-reduce:transition-none ${
           hint || live ? "opacity-100" : "opacity-0"
-        } ${live ? "" : "pointer-events-none"}`}
+        }`}
       >
         <p className="max-w-[85%] rounded-full bg-black/45 px-3.5 py-2 text-center text-sm text-white">
           {hint ??
@@ -597,18 +629,6 @@ export function Scanner({
               ? "Tap a chip to open the result"
               : "Center the code in the frame")}
         </p>
-        {live && (
-          <button
-            type="button"
-            onClick={() => void captureFrame()}
-            aria-label="Capture code"
-            className="flex h-[68px] w-[68px] items-center justify-center rounded-full border-2 border-white/80 bg-accent"
-          >
-            <span className="flex h-[54px] w-[54px] items-center justify-center rounded-full bg-white/15">
-              <Camera className="h-6 w-6 text-white" strokeWidth={1.5} />
-            </span>
-          </button>
-        )}
       </div>
 
       {/* Start / permission states */}

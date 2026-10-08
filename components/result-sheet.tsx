@@ -20,6 +20,7 @@ import {
 } from "@/lib/parse";
 import { lookupProduct, type ProductState } from "@/lib/product";
 import type { ScanItem } from "@/lib/types";
+import { LinkIcon } from "@/components/link-icon";
 
 function Pill({
   children,
@@ -179,9 +180,12 @@ export function ResultSheet({
 
           {/* Value */}
           <div className="max-h-40 overflow-y-auto rounded-ctl border border-border bg-bg px-3 py-2.5">
-            <p className="font-mono text-sm text-ink break-all whitespace-pre-wrap">
-              {item.value}
-            </p>
+            <div className="flex items-start gap-2.5">
+              {link && <LinkIcon href={link.href} size={28} className="mt-0.5" />}
+              <p className="min-w-0 flex-1 font-mono text-sm text-ink break-all whitespace-pre-wrap">
+                {item.value}
+              </p>
+            </div>
           </div>
 
           {/* Link warnings */}

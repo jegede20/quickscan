@@ -72,7 +72,7 @@ export default function ScanPage() {
         onChipTap={handleChipTap}
         onAutoOpen={handleAutoOpen}
         onImageResult={handleImageResult}
-        onCapture={handleImageResult}
+        onSearch={handleImageResult}
         autoOpen={settings.autoOpen}
       />
       <ResultSheet

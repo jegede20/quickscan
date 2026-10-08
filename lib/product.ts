@@ -1,5 +1,6 @@
-// Product lookup via Open Food Facts. The only network call in the app,
-// and only fired for barcode values the user explicitly opens.
+// Product lookup via Open Food Facts. Fired for barcodes the user opens,
+// plus the favicon fetch in components/link-icon.tsx — the only network
+// calls in the app; scan contents are never uploaded.
 
 export type Product = {
   name: string;

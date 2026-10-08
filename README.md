@@ -39,4 +39,4 @@ Camera access requires HTTPS (or localhost).
 
 Next.js (App Router) · TypeScript · Tailwind CSS · BarcodeDetector + zxing-wasm · qrcode · lucide-react · Open Food Facts · localStorage.
 
-Everything is client-side. The only outbound request is the product-code lookup against Open Food Facts.
+Everything is client-side. Outbound requests are limited to the Open Food Facts product lookup and best-effort site favicons shown next to scanned links — scan contents are never uploaded.
