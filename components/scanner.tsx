@@ -596,32 +596,11 @@ export function Scanner({
         </button>
       </div>
 
-      {/* Search button: sits between the frame and the tab bar */}
-      {live && (
-        <button
-          type="button"
-          onClick={() => void searchFrame()}
-          aria-label="Search the code in the frame"
-          className={`absolute left-1/2 z-40 flex h-[68px] w-[68px] -translate-x-1/2 items-center justify-center rounded-full border-2 border-white/80 bg-accent ${
-            frame ? "" : "bottom-[calc(64px+env(safe-area-inset-bottom))]"
-          }`}
-          style={
-            frame
-              ? { top: frame.y + frame.side + 20 }
-              : undefined
-          }
-        >
-          <span className="flex h-[54px] w-[54px] items-center justify-center rounded-full bg-white/15">
-            <Search className="h-6 w-6 text-white" strokeWidth={1.5} />
-          </span>
-        </button>
-      )}
-
-      {/* Bottom hint */}
+      {/* Bottom: hint + search button */}
       <div
-        className={`absolute inset-x-0 bottom-0 z-40 flex justify-center pb-[calc(18px+env(safe-area-inset-bottom))] transition-opacity duration-200 motion-reduce:transition-none ${
+        className={`absolute inset-x-0 bottom-0 z-40 flex flex-col items-center gap-3 pb-[calc(64px+env(safe-area-inset-bottom))] transition-opacity duration-200 motion-reduce:transition-none ${
           hint || live ? "opacity-100" : "opacity-0"
-        }`}
+        } ${live ? "" : "pointer-events-none"}`}
       >
         <p className="max-w-[85%] rounded-full bg-black/45 px-3.5 py-2 text-center text-sm text-white">
           {hint ??
@@ -629,6 +608,18 @@ export function Scanner({
               ? "Tap a chip to open the result"
               : "Center the code in the frame")}
         </p>
+        {live && (
+          <button
+            type="button"
+            onClick={() => void searchFrame()}
+            aria-label="Search the code in the frame"
+            className="flex h-[68px] w-[68px] items-center justify-center rounded-full border-2 border-white/80 bg-accent"
+          >
+            <span className="flex h-[54px] w-[54px] items-center justify-center rounded-full bg-white/15">
+              <Search className="h-6 w-6 text-white" strokeWidth={1.5} />
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Start / permission states */}
