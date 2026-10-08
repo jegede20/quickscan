@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowUpRight,
+  Camera,
   ImagePlus,
   Link2,
   Package,
@@ -95,6 +96,35 @@ function chipSpot(corners: Point[], cw: number, ch: number) {
   return { left, top };
 }
 
+/** The fixed center frame: the viewfinder never moves — the phone does. */
+function frameBox(size: { w: number; h: number }): {
+  x: number;
+  y: number;
+  side: number;
+} | null {
+  if (!size.w || !size.h) return null;
+  const side = Math.min(size.w, size.h) * 0.68;
+  const x = (size.w - side) / 2;
+  const y = (size.h - side) / 2 - 32;
+  return { x, y, side };
+}
+
+/** Keep only codes whose center sits inside the frame. */
+function isInFrame(
+  corners: Point[],
+  frame: { x: number; y: number; side: number }
+): boolean {
+  const cx = corners.reduce((s, p) => s + p.x, 0) / corners.length;
+  const cy = corners.reduce((s, p) => s + p.y, 0) / corners.length;
+  const t = 12;
+  return (
+    cx >= frame.x - t &&
+    cx <= frame.x + frame.side + t &&
+    cy >= frame.y - t &&
+    cy <= frame.y + frame.side + t
+  );
+}
+
 /** Corner brackets for a quad — two short strokes per corner along its edges. */
 function BracketPath({ corners, width = 3 }: { corners: Point[]; width?: number }) {
   const d = corners
@@ -129,11 +159,13 @@ export function Scanner({
   onChipTap,
   onAutoOpen,
   onImageResult,
+  onCapture,
   autoOpen,
 }: {
   onChipTap: (result: ScanResult) => void;
   onAutoOpen: (result: ScanResult) => void;
   onImageResult: (result: ScanResult | null) => void;
+  onCapture: (result: ScanResult | null) => void;
   autoOpen: boolean;
 }) {
   const [camState, setCamState] = useState<CamState>("idle");
@@ -155,14 +187,16 @@ export function Scanner({
   const autoOpenRef = useRef(autoOpen);
   const onAutoOpenRef = useRef(onAutoOpen);
   const onImageResultRef = useRef(onImageResult);
+  const onCaptureRef = useRef(onCapture);
   const onChipTapRef = useRef(onChipTap);
 
   useEffect(() => {
     autoOpenRef.current = autoOpen;
     onAutoOpenRef.current = onAutoOpen;
     onImageResultRef.current = onImageResult;
+    onCaptureRef.current = onCapture;
     onChipTapRef.current = onChipTap;
-  }, [autoOpen, onAutoOpen, onImageResult, onChipTap]);
+  }, [autoOpen, onAutoOpen, onImageResult, onCapture, onChipTap]);
 
   const decoder = useCallback((): Decoder => {
     if (!decoderRef.current) decoderRef.current = createDecoder();
@@ -199,17 +233,20 @@ export function Scanner({
     try {
       const out = await decoder().detect(video);
       const rect = container.getBoundingClientRect();
+      const frame = frameBox({ w: rect.width, h: rect.height });
       const now = performance.now();
       const map = targetsRef.current;
       const prevSize = map.size;
       const seen = new Set<string>();
 
       for (const hit of out.hits) {
-        const key = `${hit.format}|${hit.value}`;
-        seen.add(key);
         const corners = hit.corners.map((p) =>
           mapToDisplay(p, out.width, out.height, rect.width, rect.height)
         );
+        // Only codes aligned with the fixed center frame are scanned.
+        if (frame && !isInFrame(corners, frame)) continue;
+        const key = `${hit.format}|${hit.value}`;
+        seen.add(key);
         const existing = map.get(key);
         map.set(key, {
           key,
@@ -385,14 +422,43 @@ export function Scanner({
     []
   );
 
+  // Shutter: decode the current frame and open its result directly.
+  const captureFrame = useCallback(async () => {
+    const video = videoRef.current;
+    const container = containerRef.current;
+    if (busyRef.current || !video || !container) return;
+    if (video.readyState < 2 || !video.videoWidth) return;
+    busyRef.current = true;
+    try {
+      const out = await decoder().detect(video);
+      const rect = container.getBoundingClientRect();
+      const frame = frameBox({ w: rect.width, h: rect.height });
+      const hit = out.hits.find((h) => {
+        const corners = h.corners.map((p) =>
+          mapToDisplay(p, out.width, out.height, rect.width, rect.height)
+        );
+        return !frame || isInFrame(corners, frame);
+      });
+      if (hit) {
+        setHint(null);
+        onCaptureRef.current({
+          value: hit.value,
+          format: hit.format,
+          type: classify(hit.value, hit.format),
+          corners: hit.corners,
+        });
+      } else {
+        setHint("No code found in this frame");
+      }
+    } catch {
+      setHint("Could not capture that frame");
+    } finally {
+      busyRef.current = false;
+    }
+  }, [decoder]);
+
   const live = camState === "live";
-  const idleFrame = (() => {
-    if (!size.w || !size.h) return null;
-    const side = Math.min(size.w, size.h) * 0.68;
-    const x = (size.w - side) / 2;
-    const y = (size.h - side) / 2 - 24;
-    return { x, y, side };
-  })();
+  const frame = frameBox(size);
 
   return (
     <div
@@ -407,42 +473,33 @@ export function Scanner({
         className="absolute inset-0 h-full w-full object-cover"
       />
 
-      {/* Corner brackets + scan line */}
-      {live && (
+      {/* Fixed center viewfinder brackets — the frame stays put, the phone moves */}
+      {live && frame && (
         <svg
           className="pointer-events-none absolute inset-0 z-10 h-full w-full text-white [filter:drop-shadow(0_1px_2px_rgba(0,0,0,0.55))]"
           aria-hidden
         >
-          {targets.length === 0 && idleFrame ? (
-            <BracketPath
-              corners={[
-                { x: idleFrame.x, y: idleFrame.y },
-                { x: idleFrame.x + idleFrame.side, y: idleFrame.y },
-                {
-                  x: idleFrame.x + idleFrame.side,
-                  y: idleFrame.y + idleFrame.side,
-                },
-                { x: idleFrame.x, y: idleFrame.y + idleFrame.side },
-              ]}
-            />
-          ) : (
-            targets.map((t) => (
-              <BracketPath key={t.key} corners={t.corners} />
-            ))
-          )}
+          <BracketPath
+            corners={[
+              { x: frame.x, y: frame.y },
+              { x: frame.x + frame.side, y: frame.y },
+              { x: frame.x + frame.side, y: frame.y + frame.side },
+              { x: frame.x, y: frame.y + frame.side },
+            ]}
+          />
         </svg>
       )}
 
       {/* Scan line (only while no code is detected) */}
-      {live && targets.length === 0 && idleFrame && (
+      {live && targets.length === 0 && frame && (
         <div
           aria-hidden
           className="pointer-events-none absolute z-10"
           style={{
-            left: idleFrame.x,
-            top: idleFrame.y,
-            width: idleFrame.side,
-            height: idleFrame.side,
+            left: frame.x,
+            top: frame.y,
+            width: frame.side,
+            height: frame.side,
           }}
         >
           <div className="qs-scanline absolute left-3.5 right-3.5 top-[8%] h-1 rounded-full bg-accent motion-safe:animate-qs-scan" />
@@ -528,20 +585,30 @@ export function Scanner({
         </button>
       </div>
 
-      {/* Bottom hint */}
+      {/* Bottom: hint + capture shutter */}
       <div
-        className={`pointer-events-none absolute inset-x-0 bottom-0 z-40 flex justify-center pb-[calc(76px+env(safe-area-inset-bottom))] transition-opacity duration-200 motion-reduce:transition-none ${
-          hint || (camState !== "idle" && camState !== "starting")
-            ? "opacity-100"
-            : "opacity-0"
-        }`}
+        className={`absolute inset-x-0 bottom-0 z-40 flex flex-col items-center gap-3 pb-[calc(64px+env(safe-area-inset-bottom))] transition-opacity duration-200 motion-reduce:transition-none ${
+          hint || live ? "opacity-100" : "opacity-0"
+        } ${live ? "" : "pointer-events-none"}`}
       >
         <p className="max-w-[85%] rounded-full bg-black/45 px-3.5 py-2 text-center text-sm text-white">
           {hint ??
             (targets.length > 0
               ? "Tap a chip to open the result"
-              : "Point your camera at a QR code or barcode")}
+              : "Center the code in the frame")}
         </p>
+        {live && (
+          <button
+            type="button"
+            onClick={() => void captureFrame()}
+            aria-label="Capture code"
+            className="flex h-[68px] w-[68px] items-center justify-center rounded-full border-2 border-white/80 bg-accent"
+          >
+            <span className="flex h-[54px] w-[54px] items-center justify-center rounded-full bg-white/15">
+              <Camera className="h-6 w-6 text-white" strokeWidth={1.5} />
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Start / permission states */}

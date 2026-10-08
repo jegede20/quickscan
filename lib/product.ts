@@ -34,6 +34,8 @@ export async function lookupProduct(code: string): Promise<ProductState> {
       `${API}/${encodeURIComponent(code)}.json?fields=${fields}`,
       { signal: controller.signal }
     );
+    // Open Food Facts answers 404 + {"status":0} when the product is unknown.
+    if (res.status === 404) return { status: "notfound" };
     if (!res.ok) return { status: "error" };
     const data = (await res.json()) as {
       status?: number;
