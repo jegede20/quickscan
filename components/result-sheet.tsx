@@ -288,7 +288,7 @@ export function ResultSheet({
                     <Row label="Brand" value={product.product.brand} />
                     <Row label="Quantity" value={product.product.quantity} />
                     <Row label="Category" value={product.product.category} />
-                    <Row label="Source" value="Open Food Facts" />
+                    <Row label="Source" value={product.product.source} />
                   </div>
                 </div>
               )}
